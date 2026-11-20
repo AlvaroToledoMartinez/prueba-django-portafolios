@@ -12,12 +12,26 @@ Pregunta 4: calcular la evolución de x_{i,t}, V_t y w_{i,t} entre dos fechas.
     Weight de cada activo:           w_{i,t} = x_{i,t} / V_t
 """
 
+from django.db.models import Max, Min
+
 from portafolios.models import Cantidad, Portafolio, Precio
 
 
 def listar_portafolios():
     """Devuelve todos los portafolios ordenados por id."""
     return Portafolio.objects.all().order_by("id")
+
+
+def obtener_rango_fechas():
+    """
+    Devuelve la primera y la última fecha con precios: (fecha_min, fecha_max).
+
+    aggregate() le pide a la BD que calcule algo sobre TODA la tabla
+    (aquí el mínimo y el máximo de la columna fecha) y devuelve un diccionario:
+        {"fecha_min": date(2022, 2, 15), "fecha_max": date(2023, 2, 16)}
+    """
+    rango = Precio.objects.aggregate(fecha_min=Min("fecha"), fecha_max=Max("fecha"))
+    return rango["fecha_min"], rango["fecha_max"]
 
 
 def obtener_evolucion_portafolio(portafolio, fecha_inicio, fecha_fin):

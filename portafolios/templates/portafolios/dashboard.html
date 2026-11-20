@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Evolución de portafolios</title>
+
+    <!-- Chart.js: librería de JavaScript para dibujar gráficos -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f9f9f7;
+            color: #0b0b0b;
+            margin: 0;
+            padding: 16px;
+        }
+        .contenedor { max-width: 1100px; margin: 0 auto; }
+        h1 { font-size: 24px; margin-bottom: 4px; }
+        .subtitulo { color: #52514e; margin-top: 0; }
+
+        /* Fila de filtros */
+        .filtros {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: flex-end;
+            margin: 16px 0;
+        }
+        .filtros label { display: flex; flex-direction: column; font-size: 13px; color: #52514e; gap: 4px; }
+        .filtros input, .filtros button { font-size: 14px; padding: 6px 10px; }
+        .filtros button { cursor: pointer; background: #2a78d6; color: white; border: none; border-radius: 4px; }
+
+        .error { color: #d03b3b; font-weight: bold; }
+
+        /* Cada tarjeta contiene un gráfico */
+        .tarjeta {
+            background: #fcfcfb;
+            border: 1px solid #e4e3df;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+        .tarjeta h2 { font-size: 17px; margin: 0 0 8px 0; }
+        .area-grafico { position: relative; height: 380px; }
+        .area-grafico.alto { height: 480px; }  /* los de weights necesitan espacio para la leyenda */
+    </style>
+</head>
+<body>
+<div class="contenedor">
+
+    <h1>Evolución de portafolios</h1>
+    <p class="subtitulo">Valor total V<sub>t</sub> y weights w<sub>i,t</sub> de cada activo</p>
+
+    <!-- ===================== FILTROS ===================== -->
+    <div class="filtros">
+        <label>Fecha inicio
+            <input type="date" id="fecha_inicio" value="{{ fecha_min }}" min="{{ fecha_min }}" max="{{ fecha_max }}">
+        </label>
+        <label>Fecha fin
+            <input type="date" id="fecha_fin" value="{{ fecha_max }}" min="{{ fecha_min }}" max="{{ fecha_max }}">
+        </label>
+        <button id="boton_actualizar">Actualizar gráficos</button>
+        <span id="mensaje_error" class="error"></span>
+    </div>
+
+    <!-- ===================== GRÁFICO DE V_t ===================== -->
+    <div class="tarjeta">
+        <h2>Valor total del portafolio (V<sub>t</sub>)</h2>
+        <div class="area-grafico"><canvas id="grafico_valor"></canvas></div>
+    </div>
+
+    <!-- ===================== GRÁFICOS DE w_{i,t} (uno por portafolio) ===================== -->
+    {% for portafolio in portafolios %}
+    <div class="tarjeta">
+        <h2>Weights {{ portafolio.nombre }} (w<sub>i,t</sub>)</h2>
+        <div class="area-grafico alto"><canvas id="grafico_weights_{{ portafolio.id }}"></canvas></div>
+    </div>
+    {% endfor %}
+
+</div>
+
+<!--
+    json_script convierte la variable de Python "portafolios" en JSON dentro de la página.
+    Así el JavaScript puede leerla de forma segura.
+-->
+{{ portafolios|json_script:"datos_portafolios" }}
+
+<script>
+// =====================================================================
+// 1) DATOS INICIALES
+// =====================================================================
+
+// Lista de portafolios que envió la view de Django: [{id: 1, nombre: "Portafolio 1"}, ...]
+const PORTAFOLIOS = JSON.parse(document.getElementById("datos_portafolios").textContent);
+
+// Colores para las líneas de V_t (un color por portafolio)
+const COLORES_PORTAFOLIOS = ["#2a78d6", "#eb6834", "#1baf7a", "#6250d6"];
+
+// Colores para los 17 activos del gráfico de áreas:
+// 8 colores fuertes, luego las mismas 8 versiones claras, y un gris.
+const COLORES_ACTIVOS = [
+    "#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#6250d6", "#e34948",
+    "#86b6ef", "#f5a27f", "#7dd3b0", "#f6cc6b", "#f2b3cb", "#66b866", "#a99ef0", "#f09a99",
+    "#9a9890",
+];
+
+// Aquí guardamos los gráficos ya dibujados, para borrarlos antes de redibujar
+const graficos = {};
+
+
+// =====================================================================
+// 2) FUNCIONES DE AYUDA
+// =====================================================================
+
+// 929055490.74 -> "$929.055.491"
+function formatearDinero(valor) {
+    return "$" + valor.toLocaleString("es-CL", { maximumFractionDigits: 0 });
+}
+
+// Si ya existe un gráfico en ese canvas, lo borra (Chart.js no permite dos en el mismo canvas)
+function borrarGrafico(idCanvas) {
+    if (graficos[idCanvas]) {
+        graficos[idCanvas].destroy();
+    }
+}
+
+
+// =====================================================================
+// 3) PEDIR LOS DATOS A LA API (pregunta 4)
+// =====================================================================
+
+async function pedirEvolucion(portafolioId, fechaInicio, fechaFin) {
+    const url = `/api/portafolios/${portafolioId}/evolucion/?fecha_inicio=${fechaInicio}&fecha_fin=${fechaFin}`;
+
+    const respuesta = await fetch(url);       // hace la petición GET
+    const json = await respuesta.json();      // convierte la respuesta en objeto JavaScript
+
+    if (!respuesta.ok) {
+        // La API respondió con error (400 o 404): lanzamos el mensaje que envió
+        throw new Error(json.error);
+    }
+    return json.datos;  // [{fecha, valor_total, weights}, ...]
+}
+
+
+// =====================================================================
+// 4) DIBUJAR EL GRÁFICO DE LÍNEAS DE V_t (todos los portafolios juntos)
+// =====================================================================
+
+function dibujarGraficoValor(resultados) {
+    const idCanvas = "grafico_valor";
+    borrarGrafico(idCanvas);
+
+    // Eje X: las fechas (son las mismas para todos los portafolios)
+    const fechas = resultados[0].datos.map(fila => fila.fecha);
+
+    // Una línea (dataset) por portafolio
+    const lineas = [];
+    for (let i = 0; i < resultados.length; i++) {
+        const resultado = resultados[i];
+        lineas.push({
+            label: resultado.portafolio.nombre,
+            data: resultado.datos.map(fila => fila.valor_total),
+            borderColor: COLORES_PORTAFOLIOS[i],
+            backgroundColor: COLORES_PORTAFOLIOS[i],
+            borderWidth: 2,
+            pointRadius: 0,        // sin puntos, solo la línea
+        });
+    }
+
+    graficos[idCanvas] = new Chart(document.getElementById(idCanvas), {
+        type: "line",
+        data: { labels: fechas, datasets: lineas },
+        options: {
+            maintainAspectRatio: false,
+            // Al pasar el mouse, muestra todos los portafolios de esa fecha
+            interaction: { mode: "index", intersect: false },
+            plugins: {
+                tooltip: {
+                    callbacks: {
+                        label: contexto => `${contexto.dataset.label}: ${formatearDinero(contexto.parsed.y)}`,
+                    },
+                },
+            },
+            scales: {
+                x: { ticks: { maxTicksLimit: 10 } },
+                y: {
+                    // Eje Y en millones: 1000000000 -> "$1.000 M"
+                    ticks: { callback: valor => "$" + (valor / 1e6).toLocaleString("es-CL") + " M" },
+                },
+            },
+        },
+    });
+}
+
+
+// =====================================================================
+// 5) DIBUJAR EL GRÁFICO "STACKED AREA" DE w_{i,t} (uno por portafolio)
+// =====================================================================
+
+function dibujarGraficoWeights(resultado) {
+    const idCanvas = "grafico_weights_" + resultado.portafolio.id;
+    borrarGrafico(idCanvas);
+
+    const fechas = resultado.datos.map(fila => fila.fecha);
+
+    // Nombres de los activos (se sacan de la primera fecha)
+    const nombresActivos = Object.keys(resultado.datos[0].weights);
+
+    // Un área (dataset) por activo
+    const areas = [];
+    for (let i = 0; i < nombresActivos.length; i++) {
+        const nombre = nombresActivos[i];
+        areas.push({
+            label: nombre,
+            // Pasamos el weight a porcentaje: 0.28 -> 28
+            data: resultado.datos.map(fila => fila.weights[nombre] * 100),
+            backgroundColor: COLORES_ACTIVOS[i % COLORES_ACTIVOS.length],
+            borderColor: "#fcfcfb",   // línea delgada del color del fondo: separa las áreas
+            borderWidth: 1,
+            pointRadius: 0,
+            // El primer activo se rellena desde 0; los demás, desde el activo anterior
+            fill: i === 0 ? "origin" : "-1",
+        });
+    }
+
+    graficos[idCanvas] = new Chart(document.getElementById(idCanvas), {
+        type: "line",
+        data: { labels: fechas, datasets: areas },
+        options: {
+            maintainAspectRatio: false,
+            interaction: { mode: "index", intersect: false },
+            plugins: {
+                // Leyenda abajo: con 17 activos no cabe al costado
+                legend: { position: "bottom", labels: { boxWidth: 12 } },
+                tooltip: {
+                    // No mostrar en el tooltip los activos con weight 0
+                    filter: item => item.parsed.y > 0,
+                    // Mostrar primero el área de arriba (igual que se ve en el gráfico)
+                    itemSort: (a, b) => b.datasetIndex - a.datasetIndex,
+                    callbacks: {
+                        label: contexto => `${contexto.dataset.label}: ${contexto.parsed.y.toFixed(2)}%`,
+                    },
+                },
+            },
+            scales: {
+                x: { ticks: { maxTicksLimit: 10 } },
+                y: {
+                    stacked: true,   // apila las áreas una sobre otra
+                    min: 0,
+                    max: 100,
+                    ticks: { callback: valor => valor + "%" },
+                },
+            },
+        },
+    });
+}
+
+
+// =====================================================================
+// 6) FUNCIÓN PRINCIPAL: se ejecuta al cargar la página y al apretar el botón
+// =====================================================================
+
+async function actualizarGraficos() {
+    const fechaInicio = document.getElementById("fecha_inicio").value;
+    const fechaFin = document.getElementById("fecha_fin").value;
+    const mensajeError = document.getElementById("mensaje_error");
+    mensajeError.textContent = "";
+
+    try {
+        // Pedir los datos de cada portafolio a la API
+        const resultados = [];
+        for (const portafolio of PORTAFOLIOS) {
+            const datos = await pedirEvolucion(portafolio.id, fechaInicio, fechaFin);
+            resultados.push({ portafolio: portafolio, datos: datos });
+        }
+
+        if (resultados.length === 0 || resultados[0].datos.length === 0) {
+            mensajeError.textContent = "No hay datos para ese rango de fechas.";
+            return;
+        }
+
+        // Dibujar
+        dibujarGraficoValor(resultados);
+        for (const resultado of resultados) {
+            dibujarGraficoWeights(resultado);
+        }
+    } catch (error) {
+        mensajeError.textContent = error.message;
+    }
+}
+
+document.getElementById("boton_actualizar").addEventListener("click", actualizarGraficos);
+actualizarGraficos();  // dibujar apenas carga la página
+</script>
+</body>
+</html>
