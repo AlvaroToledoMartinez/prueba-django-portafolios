@@ -6,13 +6,13 @@ Aquí van las funciones que ESCRIBEN en la base de datos
 (crear, actualizar o borrar filas).
 
     - Pregunta 2: ETL que lee datos.xlsx y guarda activos, portafolios, precios y weights.
-    - Pregunta 3: (pendiente) cálculo y guardado de las cantidades iniciales c_{i,0}.
+    - Pregunta 3: cálculo y guardado de las cantidades iniciales c_{i,0}.
 """
 
 import pandas as pd
 from django.db import transaction
 
-from portafolios.models import Activo, Portafolio, Precio, Weight
+from portafolios.models import Activo, Cantidad, Portafolio, Precio, Weight
 
 
 # =============================================================================
@@ -151,3 +151,69 @@ def cargar_datos_excel(ruta_excel, valor_inicial=1_000_000_000):
         total_weights = cargar_weights(ruta_excel, valor_inicial)
 
     return total_precios, total_weights
+
+
+# =============================================================================
+# PREGUNTA 3: Cantidades iniciales c_{i,0}
+# =============================================================================
+#
+#   Fórmula del enunciado:
+#
+#               w_{i,0} * V_0
+#   c_{i,0} = ---------------
+#                  p_{i,0}
+#
+#   - w_{i,0}: weight del activo i en t = 0        -> tabla Weight
+#   - V_0:     valor inicial del portafolio         -> Portafolio.valor_inicial
+#   - p_{i,0}: precio del activo i en t = 0         -> tabla Precio
+#
+#   Intuición: w * V_0 son los DÓLARES que se invierten en el activo,
+#   y al dividir por el precio obtenemos cuántas UNIDADES se compran.
+# =============================================================================
+
+
+def calcular_cantidades_iniciales(portafolio):
+    """
+    Calcula y guarda c_{i,0} para cada activo de UN portafolio.
+
+    Devuelve la lista de objetos Cantidad guardados.
+    """
+    fecha_inicial = portafolio.fecha_inicio   # t = 0
+    v_0 = portafolio.valor_inicial            # V_0
+
+    # Todos los weights iniciales de este portafolio (uno por activo)
+    weights = Weight.objects.filter(portafolio=portafolio, fecha=fecha_inicial)
+
+    cantidades = []
+    for weight in weights:
+        w_0 = weight.valor  # w_{i,0}
+
+        # Buscar el precio de ESTE activo en la fecha inicial: p_{i,0}
+        precio = Precio.objects.get(activo=weight.activo, fecha=fecha_inicial)
+        p_0 = precio.valor
+
+        # Aplicar la fórmula
+        c_0 = w_0 * v_0 / p_0
+
+        # Guardar (o actualizar si ya existía)
+        cantidad, creada = Cantidad.objects.update_or_create(
+            portafolio=portafolio,
+            activo=weight.activo,
+            defaults={"valor": c_0},
+        )
+        cantidades.append(cantidad)
+
+    return cantidades
+
+
+def calcular_cantidades_todos_los_portafolios():
+    """
+    Llama a calcular_cantidades_iniciales() para cada portafolio de la BD.
+
+    Devuelve un diccionario:  { <Portafolio 1>: [cantidades...], <Portafolio 2>: [...] }
+    """
+    resultado = {}
+    with transaction.atomic():
+        for portafolio in Portafolio.objects.all():
+            resultado[portafolio] = calcular_cantidades_iniciales(portafolio)
+    return resultado
