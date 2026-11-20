@@ -16,25 +16,25 @@ Uso:
 
 from django.core.management.base import BaseCommand
 
-from portafolios.services import cargar_datos_excel
+from portafolios.services import datos_cargar_desde_excel
 
 
 class Command(BaseCommand):
     help = "Carga los datos de datos.xlsx (activos, precios, portafolios y weights) a la base de datos"
 
-    def add_arguments(self, parser):
+    def add_arguments(self, parser) -> None:
         # Argumentos opcionales, con valores por defecto
         parser.add_argument("--ruta", default="datos.xlsx")
         parser.add_argument("--valor-inicial", type=float, default=1_000_000_000)
 
-    def handle(self, *args, **options):
+    def handle(self, *args, **options) -> None:
         # handle() es lo que se ejecuta al correr el comando
         ruta = options["ruta"]
         valor_inicial = options["valor_inicial"]
 
         self.stdout.write(f"Cargando datos desde {ruta} ...")
 
-        total_precios, total_weights = cargar_datos_excel(ruta, valor_inicial)
+        total_precios, total_weights = datos_cargar_desde_excel(ruta_excel=ruta, valor_inicial=valor_inicial)
 
         self.stdout.write(self.style.SUCCESS(
             f"Listo: {total_precios} precios y {total_weights} weights cargados."

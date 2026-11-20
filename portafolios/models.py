@@ -49,7 +49,7 @@ class Activo(BaseModel):
     # unique=True: no pueden existir dos activos con el mismo nombre
     nombre = models.CharField(max_length=100, unique=True)
 
-    def __str__(self):
+    def __str__(self) -> str:
         # Texto que se muestra cuando imprimimos el objeto (y en el admin)
         return self.nombre
 
@@ -66,7 +66,7 @@ class Portafolio(BaseModel):
     valor_inicial = models.FloatField()
     fecha_inicio = models.DateField()
 
-    def __str__(self):
+    def __str__(self) -> str:
         return self.nombre
 
 
@@ -91,7 +91,7 @@ class Precio(BaseModel):
         ]
         ordering = ["fecha"]
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.activo} | {self.fecha} | {self.valor}"
 
 
@@ -116,7 +116,7 @@ class Weight(BaseModel):
             ),
         ]
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.portafolio} | {self.activo} | {self.valor}"
 
 
@@ -139,5 +139,5 @@ class Cantidad(BaseModel):
             models.UniqueConstraint(fields=["portafolio", "activo"], name="cantidad_unica_por_portafolio_activo"),
         ]
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.portafolio} | {self.activo} | {self.valor}"

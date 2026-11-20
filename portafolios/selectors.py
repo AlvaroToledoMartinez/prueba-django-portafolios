@@ -3,6 +3,8 @@ SELECTORS (guía Django-Styleguide)
 ==================================
 
 Aquí van las funciones que solo LEEN de la base de datos (no modifican nada).
+Siguen las mismas convenciones que services.py:
+nombre <entidad>_<acción>, argumentos keyword-only (*) y type hints.
 
 Pregunta 4: calcular la evolución de x_{i,t}, V_t y w_{i,t} entre dos fechas.
 
@@ -12,19 +14,22 @@ Pregunta 4: calcular la evolución de x_{i,t}, V_t y w_{i,t} entre dos fechas.
     Weight de cada activo:           w_{i,t} = x_{i,t} / V_t
 """
 
-from django.db.models import Max, Min
+from datetime import date
+
+from django.db.models import Max, Min, QuerySet
 
 from portafolios.models import Cantidad, Portafolio, Precio
 
 
-def listar_portafolios():
+def portafolio_listar() -> QuerySet[Portafolio]:
     """Devuelve todos los portafolios ordenados por id."""
     return Portafolio.objects.all().order_by("id")
 
 
-def obtener_rango_fechas():
+def precio_obtener_rango_fechas() -> tuple[date | None, date | None]:
     """
     Devuelve la primera y la última fecha con precios: (fecha_min, fecha_max).
+    Si no hay precios cargados, devuelve (None, None).
 
     aggregate() le pide a la BD que calcule algo sobre TODA la tabla
     (aquí el mínimo y el máximo de la columna fecha) y devuelve un diccionario:
@@ -34,7 +39,7 @@ def obtener_rango_fechas():
     return rango["fecha_min"], rango["fecha_max"]
 
 
-def obtener_evolucion_portafolio(portafolio, fecha_inicio, fecha_fin):
+def portafolio_obtener_evolucion(*, portafolio: Portafolio, fecha_inicio: date, fecha_fin: date) -> list[dict]:
     """
     Calcula V_t y w_{i,t} para cada fecha entre fecha_inicio y fecha_fin (incluidas).
 
@@ -42,7 +47,7 @@ def obtener_evolucion_portafolio(portafolio, fecha_inicio, fecha_fin):
         [
             {
                 "fecha": "2022-02-15",
-                "valor_total": 1000000000.0,                 <- V_t
+                "valor_total": 1000000000.0,                     <- V_t
                 "weights": {"EEUU": 0.28, "Europa": 0.087, ...}  <- w_{i,t}
             },
             ...
@@ -53,7 +58,7 @@ def obtener_evolucion_portafolio(portafolio, fecha_inicio, fecha_fin):
     # PASO 1: traer las cantidades c_{i,0} del portafolio (1 consulta a la BD)
     # ------------------------------------------------------------------
     # Las guardamos en un diccionario:  { id_del_activo: cantidad }
-    cantidades = {}
+    cantidades: dict[int, float] = {}
     for cantidad in Cantidad.objects.filter(portafolio=portafolio):
         cantidades[cantidad.activo_id] = cantidad.valor
 
@@ -83,7 +88,7 @@ def obtener_evolucion_portafolio(portafolio, fecha_inicio, fecha_fin):
     #     fecha1: {"EEUU": x, "Europa": x, ...},
     #     fecha2: {...},
     # }
-    montos_por_fecha = {}
+    montos_por_fecha: dict[date, dict[str, float]] = {}
     for precio in precios:
         x = precio.valor * cantidades[precio.activo_id]  # x_{i,t} = p_{i,t} * c_{i,0}
 
@@ -94,16 +99,16 @@ def obtener_evolucion_portafolio(portafolio, fecha_inicio, fecha_fin):
     # ------------------------------------------------------------------
     # PASO 4: para cada fecha calcular V_t y los weights w_{i,t}
     # ------------------------------------------------------------------
-    resultado = []
+    resultado: list[dict] = []
     for fecha, montos in montos_por_fecha.items():
 
         # V_t = suma de todos los montos de esa fecha
-        valor_total = 0
+        valor_total = 0.0
         for x in montos.values():
             valor_total += x
 
         # w_{i,t} = x_{i,t} / V_t
-        weights = {}
+        weights: dict[str, float] = {}
         for nombre_activo, x in montos.items():
             weights[nombre_activo] = x / valor_total
 

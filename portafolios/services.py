@@ -5,6 +5,25 @@ SERVICES (guía Django-Styleguide)
 Aquí van las funciones que ESCRIBEN en la base de datos
 (crear, actualizar o borrar filas).
 
+Convenciones de la guía que seguimos:
+
+1) Nombre:  <entidad>_<acción>
+       ej:  precio_cargar_desde_excel, cantidad_calcular_iniciales
+
+2) Argumentos "keyword-only" (el asterisco * en la definición):
+       def cantidad_calcular_iniciales(*, portafolio): ...
+   obliga a llamar la función escribiendo el nombre del argumento:
+       cantidad_calcular_iniciales(portafolio=p)   # bien
+       cantidad_calcular_iniciales(p)              # error
+   Así el código se lee mejor y no se confunde el orden de los argumentos.
+
+3) Type hints: indican el tipo de cada argumento y de lo que devuelve.
+       def f(*, ruta_excel: str) -> int:
+   "ruta_excel es texto (str) y la función devuelve un entero (int)".
+   Python NO los obliga al ejecutar; sirven como documentación y para que
+   el editor detecte errores.
+
+Funciones:
     - Pregunta 2: ETL que lee datos.xlsx y guarda activos, portafolios, precios y weights.
     - Pregunta 3: cálculo y guardado de las cantidades iniciales c_{i,0}.
 """
@@ -29,7 +48,7 @@ from portafolios.models import Activo, Cantidad, Portafolio, Precio, Weight
 # =============================================================================
 
 
-def cargar_precios(ruta_excel):
+def precio_cargar_desde_excel(*, ruta_excel: str) -> int:
     """
     Lee la hoja "Precios" y guarda los activos y sus precios p_{i,t}.
 
@@ -51,7 +70,7 @@ def cargar_precios(ruta_excel):
     # ---- L: crear los activos (una fila por cada nombre) ----
     # Guardamos los objetos en un diccionario para no buscarlos en la BD cada vez:
     #   activos["EEUU"] -> <Activo: EEUU>
-    activos = {}
+    activos: dict[str, Activo] = {}
     for nombre in nombres_activos:
         activo, creado = Activo.objects.update_or_create(nombre=nombre.strip())
         activos[nombre] = activo
@@ -78,7 +97,7 @@ def cargar_precios(ruta_excel):
     return cantidad_guardados
 
 
-def cargar_weights(ruta_excel, valor_inicial):
+def weight_cargar_desde_excel(*, ruta_excel: str, valor_inicial: float) -> int:
     """
     Lee la hoja "weights" y guarda los portafolios y sus weights iniciales w_{i,0}.
 
@@ -120,7 +139,7 @@ def cargar_weights(ruta_excel, valor_inicial):
             fecha = fila["Fecha"].date()
             valor = float(fila[columna])
 
-            # El activo ya debería existir (lo creó cargar_precios).
+            # El activo ya debería existir (lo creó precio_cargar_desde_excel).
             # Si no existe, .get() lanza un error y nos avisa que el Excel tiene algo raro.
             activo = Activo.objects.get(nombre=nombre_activo)
 
@@ -136,9 +155,11 @@ def cargar_weights(ruta_excel, valor_inicial):
     return cantidad_guardados
 
 
-def cargar_datos_excel(ruta_excel, valor_inicial=1_000_000_000):
+def datos_cargar_desde_excel(*, ruta_excel: str, valor_inicial: float = 1_000_000_000) -> tuple[int, int]:
     """
     Función principal de la ETL: carga todo el archivo datos.xlsx.
+
+    Devuelve una tupla: (cantidad de precios guardados, cantidad de weights guardados).
 
     transaction.atomic() hace que todo se guarde "de una vez":
     si algo falla a la mitad, se deshace todo y la base de datos queda como estaba.
@@ -146,9 +167,9 @@ def cargar_datos_excel(ruta_excel, valor_inicial=1_000_000_000):
     """
     with transaction.atomic():
         # Primero los precios, porque ahí se crean los activos
-        total_precios = cargar_precios(ruta_excel)
+        total_precios = precio_cargar_desde_excel(ruta_excel=ruta_excel)
         # Después los weights, que necesitan que los activos ya existan
-        total_weights = cargar_weights(ruta_excel, valor_inicial)
+        total_weights = weight_cargar_desde_excel(ruta_excel=ruta_excel, valor_inicial=valor_inicial)
 
     return total_precios, total_weights
 
@@ -172,7 +193,7 @@ def cargar_datos_excel(ruta_excel, valor_inicial=1_000_000_000):
 # =============================================================================
 
 
-def calcular_cantidades_iniciales(portafolio):
+def cantidad_calcular_iniciales(*, portafolio: Portafolio) -> list[Cantidad]:
     """
     Calcula y guarda c_{i,0} para cada activo de UN portafolio.
 
@@ -184,7 +205,7 @@ def calcular_cantidades_iniciales(portafolio):
     # Todos los weights iniciales de este portafolio (uno por activo)
     weights = Weight.objects.filter(portafolio=portafolio, fecha=fecha_inicial)
 
-    cantidades = []
+    cantidades: list[Cantidad] = []
     for weight in weights:
         w_0 = weight.valor  # w_{i,0}
 
@@ -206,14 +227,14 @@ def calcular_cantidades_iniciales(portafolio):
     return cantidades
 
 
-def calcular_cantidades_todos_los_portafolios():
+def cantidad_calcular_iniciales_todos() -> dict[Portafolio, list[Cantidad]]:
     """
-    Llama a calcular_cantidades_iniciales() para cada portafolio de la BD.
+    Llama a cantidad_calcular_iniciales() para cada portafolio de la BD.
 
     Devuelve un diccionario:  { <Portafolio 1>: [cantidades...], <Portafolio 2>: [...] }
     """
-    resultado = {}
+    resultado: dict[Portafolio, list[Cantidad]] = {}
     with transaction.atomic():
         for portafolio in Portafolio.objects.all():
-            resultado[portafolio] = calcular_cantidades_iniciales(portafolio)
+            resultado[portafolio] = cantidad_calcular_iniciales(portafolio=portafolio)
     return resultado

@@ -10,14 +10,14 @@ Requisito: haber corrido antes  python manage.py cargar_datos
 
 from django.core.management.base import BaseCommand
 
-from portafolios.services import calcular_cantidades_todos_los_portafolios
+from portafolios.services import cantidad_calcular_iniciales_todos
 
 
 class Command(BaseCommand):
     help = "Calcula y guarda las cantidades iniciales c_{i,0} de cada portafolio"
 
-    def handle(self, *args, **options):
-        resultado = calcular_cantidades_todos_los_portafolios()
+    def handle(self, *args, **options) -> None:
+        resultado = cantidad_calcular_iniciales_todos()
 
         for portafolio, cantidades in resultado.items():
             self.stdout.write("")
