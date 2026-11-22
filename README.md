@@ -8,11 +8,12 @@ y de los weights (w_{i,t}) mediante una API y gráficos.
 
 ```powershell
 python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe manage.py migrate
-.\.venv\Scripts\python.exe manage.py cargar_datos          # Pregunta 2: ETL
-.\.venv\Scripts\python.exe manage.py calcular_cantidades   # Pregunta 3: c_{i,0}
-.\.venv\Scripts\python.exe manage.py runserver
+.\.venv\Scripts\Activate.ps1                 # activar el entorno virtual (aparece "(.venv)")
+pip install -r requirements.txt
+python manage.py migrate
+python manage.py cargar_datos                # Pregunta 2: ETL
+python manage.py calcular_cantidades         # Pregunta 3: c_{i,0}
+python manage.py runserver
 ```
 
 - Gráficos (pregunta 5): http://127.0.0.1:8000/

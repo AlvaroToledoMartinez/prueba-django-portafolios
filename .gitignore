@@ -24,3 +24,4 @@ Thumbs.db
 
 # Archivos temporales de Excel (cuando datos.xlsx está abierto)
 ~$*.xlsx
+*.pdf
