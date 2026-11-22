@@ -1,27 +1,15 @@
 # Entorno virtual (se recrea con: pip install -r requirements.txt)
 .venv/
 venv/
-
-# Archivos compilados de Python
 __pycache__/
 *.py[cod]
-
-# Base de datos local (se recrea con: python manage.py migrate)
 db.sqlite3
 db.sqlite3-journal
-
-# Archivos estáticos recolectados
 staticfiles/
-
-# Variables de entorno / secretos
 .env
-
-# Editores y sistema operativo
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
-
-# Archivos temporales de Excel (cuando datos.xlsx está abierto)
 ~$*.xlsx
 *.pdf
